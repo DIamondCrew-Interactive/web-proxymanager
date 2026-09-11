@@ -1,6 +1,6 @@
 # Proxy Manager SSO — local opt-in overlay
 
-This directory is NOT part of the approved reskin release. The root Dockerfile,
+This directory prepares SSO release 1.1.0 separately from reskin release 1.0.0. The root Dockerfile,
 smoke runner, version lock, engine and upstream database schema are unchanged.
 Candidate source is prepared for branch `integration/central-sso-20260911` only.
 No SSO release or deployment was performed. Baseline source backup:
@@ -82,7 +82,7 @@ actual Docker context first with the lightweight `context-check` target:
 
 ```bash
 docker build --target context-check -f sso/Dockerfile -t diamondcrew-interactive/npm-sso-context-check .
-docker build -f sso/Dockerfile -t diamondcrew-interactive/proxy-manager:2.15.1-sso-local .
+docker build -f sso/Dockerfile -t diamondcrew-interactive/proxy-manager:1.1.0-candidate .
 docker exec TEST_CONTAINER dci-proxymanager sso link NPM_USER_ID DISCORD_ID
 docker exec TEST_CONTAINER dci-proxymanager sso show DISCORD_ID
 docker exec TEST_CONTAINER dci-proxymanager sso list
@@ -95,21 +95,22 @@ Unlink explicitly before reassignment. Mutation uses a lock directory and atomic
 rename; after an interrupted CLI operation, review a remaining `.lock` manually.
 CLI uses the actual NPM model/DB configuration and never writes NPM user records.
 
-Do NOT add this to v1.0.0 production publishing. This image adds backend files,
+Release this only as 1.1.0; never overwrite the approved v1.0.0 image/tag. This image adds backend files,
 so the reskin-only image-invariants test intentionally does not accept it.
 
 ## Local validation and isolated native Docker test
 
 Completed: 15 Node tests using real Ed25519 and live loopback Express requests
 with injected broker/NPM doubles; frontend `tsc && vite build`; Chromium login/
-callback/2FA/password fallback check with mocked API; syntax checks. No Docker,
-real Staff broker or production login was tested locally.
+callback/2FA/password fallback check with mocked API; syntax checks. Docker is unavailable locally. The coordinator subsequently reported the real
+DIA-01 native Docker gate PASS; see RELEASE-1.1.0.md. Real production Discord
+browser login remains pending.
 
 ```bash
 npm ci --prefix sso --ignore-scripts
 npm test --prefix sso
 sudo python3 sso/docker-test.py \
-  --image diamondcrew-interactive/proxy-manager:2.15.1-sso-local \
+  --image diamondcrew-interactive/proxy-manager:1.1.0-candidate \
   --workdir /var/tmp/dci-npm-sso-test-01
 ```
 
@@ -122,8 +123,8 @@ API, verifies replay/disabled/unlinked rejection, then removes only its containe
 The broker is a local injected signed-assertion adapter; no Staff/Internet calls.
 Private logs/data remain outside repo. `report.json` distinguishes native SSO
 result, existing-container isolation and the untested real Staff broker.
-Root coordinator must run this and a real broker/browser end-to-end test before
-accepting SSO for deployment. Never publish its private work directory.
+Root coordinator owns final release build/publishing/deployment and the pending
+real production broker/browser end-to-end check. Never publish its private work directory.
 
 For local browser regression after preparing `.build/sso-frontend`:
 `node sso/browser-check.mjs` (root Playwright dependency required).
@@ -164,3 +165,5 @@ both native-password and SSO responses agree. It never accepts 2xx, validation
 400, arbitrary 404, 500 or different permission results. Runtime auth/permissions
 are unchanged; this corrects an overly narrow test status assumption. Safe failure
 diagnostics now include a fixed assertion label and native/SSO numeric statuses.
+
+Release evidence, metadata-only delta and rollback: [RELEASE-1.1.0.md](RELEASE-1.1.0.md).

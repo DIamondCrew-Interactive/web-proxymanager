@@ -1,0 +1,16 @@
+{
+  "product": "DiamondCrew Interactive Proxy Manager",
+  "version": "1.1.0",
+  "npm_version": "2.15.1",
+  "npm_image": "jc21/nginx-proxy-manager:2.15.1@sha256:52b2c59994f3d36acfcf70a1626f29734df0ed8c71bacc0269f78b6f939858bb",
+  "validated_runtime_build_commit": "46fe5ec03c6bc3001443c97d4270f5a6c2f3813d",
+  "validated_native_test_commit": "74a0534825e32be3f339d280da9acfa798047a3b",
+  "validated_image_id": "sha256:0665a8fd0d4b0e403699a8f509723e9eec22b2d44c2c98d11598db59a63a6a67",
+  "native_docker_gate": "PASS (coordinator-reported DIA-01)",
+  "native_permission_equivalence": "PASS",
+  "native_2fa": "PASS",
+  "production_discord_browser": "PENDING",
+  "release_image_id": null,
+  "release_state": "prepared; coordinator publishes/deploys",
+  "evidence_log": "/var/tmp/dci-integration-tests-20260911/proxymanager-retry3.log"
+}

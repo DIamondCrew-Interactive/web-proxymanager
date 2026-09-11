@@ -5,10 +5,11 @@ Tmavý navy dashboard, skutečné dodané logo, gradient `#2ec7ff → #f43cb2 �
 boční navigace, přehledové karty, tabulky, formuláře a modaly. Zachovává původní
 login, 2FA, oprávnění a NPM editory. Světlý režim i přepínač jazyků zůstávají dostupné.
 
-**Source je publikovaný pouze ve větvi `smoke-test`; production release je vypnutý.**
-Operátor DIA-01 potvrdil build, secret scan, image invariants a ve smoke-02 také
-opravený networking a production isolation. Oprava HTTPS SNI čeká na smoke-03.
-Produkční NPM nebyl změněn. Lokální prohlížečové testy používají syntetická data a mock API.
+**Větev připravuje SSO release 1.1.0; publikované v1.0.0 zůstává oddělené.**
+Koordinátor potvrdil skutečný Docker native gate PASS, včetně shody oprávnění
+s přihlášením heslem a nativního 2FA. Produkční Discord/browser E2E je dosud pending.
+Přesné důkazy, build a rollback jsou v [SSO release přípravě](sso/RELEASE-1.1.0.md).
+Pro 1.1.0 použijte `sso/Dockerfile`; root Dockerfile je původní reskin.
 
 Pro skutečný Docker build a integrační ověření je nyní připravený
 [izolovaný smoke test pro DIA-01](docs/DOCKER-SMOKE.md): `scripts/smoke.py`.

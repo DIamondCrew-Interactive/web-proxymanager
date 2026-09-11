@@ -13,7 +13,7 @@ smoke.require(not os.environ.get('DOCKER_HOST') and not os.environ.get('DOCKER_C
 context=json.loads(smoke.run('docker','context','inspect'))[0]
 smoke.require(context['Endpoints']['docker']['Host'].startswith('unix://'),'Local Docker required')
 image=json.loads(smoke.run('docker','image','inspect',a.image))[0]
-smoke.require(image['Config']['Labels'].get('net.diamondcrew.sso')=='experimental-local','Expected local SSO image')
+smoke.require(image['Config']['Labels'].get('net.diamondcrew.sso')=='1.1.0','Expected Proxy Manager SSO 1.1.0 image')
 work=smoke.fresh_root(a.workdir);os.umask(0o077);work.mkdir(parents=True,mode=0o700)
 for name in ('data','letsencrypt'): (work/name).mkdir(mode=0o700)
 name='dci-sso-test-'+secrets.token_hex(6);initial=smoke.inventory();created=False;success=False

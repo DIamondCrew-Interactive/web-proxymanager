@@ -1,4 +1,4 @@
-# Experimental SSO overlay. Does not alter the approved reskin Dockerfile.
+# DiamondCrew Interactive Proxy Manager 1.1.0 SSO image; pinned NPM 2.15.1.
 FROM node:24.14.0-bookworm@sha256:5a593d74b632d1c6f816457477b6819760e13624455d587eef0fa418c8d0777b AS context-check
 WORKDIR /work
 COPY upstream.lock.json ./
@@ -18,4 +18,4 @@ COPY --from=frontend /work/.build/LICENSE.upstream /usr/share/licenses/diamondcr
 COPY sso/core.mjs sso/router.mjs sso/routes.mjs sso/links.mjs sso/cli.mjs sso/prepare.mjs sso/upstream-guards.json /app/dci-sso/
 COPY sso/dci-proxymanager /usr/local/bin/dci-proxymanager
 RUN node /app/dci-sso/prepare.mjs backend /app && chmod 755 /usr/local/bin/dci-proxymanager
-LABEL net.diamondcrew.upstream.version="2.15.1" net.diamondcrew.sso="experimental-local"
+LABEL org.opencontainers.image.title="DiamondCrew Interactive Proxy Manager"  org.opencontainers.image.version="1.1.0"  org.opencontainers.image.source="https://github.com/DIamondCrew-Interactive/web-proxymanager"  net.diamondcrew.upstream.version="2.15.1"  net.diamondcrew.sso="1.1.0"
