@@ -1,0 +1,1 @@
+{"name":"dci-proxymanager-sso-tests","private":true,"type":"module","scripts":{"test":"node --test *.test.mjs"},"devDependencies":{"express":"5.2.1"},"dependencies":{"diamondcrew-interactive-proxy-manager-theme":"file:.."}}

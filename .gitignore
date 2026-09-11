@@ -21,6 +21,8 @@
 !playwright.config.mjs
 !release/
 !release/**
+!sso/
+!sso/**
 **/.env*
 **/node_modules/
 **/__pycache__/

@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,14 +13,20 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 FILES = ['.gitignore', '.gitattributes', '.dockerignore', 'Dockerfile', 'README.md', 'upstream.lock.json',
          'package.json', 'package-lock.json', 'playwright.config.mjs', 'LICENSE.upstream']
-DIRS = ['branding', 'scripts', 'tests', 'docs', 'deploy', 'release']
+DIRS = ['branding', 'scripts', 'tests', 'docs', 'deploy', 'release', 'sso']
 FORBIDDEN = {'.pem', '.key', '.p12', '.pfx', '.db', '.sqlite', '.sqlite3'}
 
 
 def shipping_files():
     result = [ROOT / name for name in FILES if (ROOT / name).is_file()]
     for name in DIRS:
-        result += [p for p in (ROOT / name).rglob('*') if p.is_file() and '__pycache__' not in p.parts]
+        if (ROOT / name).is_symlink():
+            raise RuntimeError('Symlinked source directory is forbidden')
+        for directory, dirs, files in os.walk(ROOT / name):
+            dirs[:] = [d for d in dirs if d not in ('__pycache__', 'node_modules')]
+            if any((Path(directory) / d).is_symlink() for d in dirs):
+                raise RuntimeError('Symlinked source directory is forbidden')
+            result += [Path(directory) / file for file in files]
     for path in result:
         if path.is_symlink() or path.suffix.lower() in FORBIDDEN or path.name.startswith('.env') or 'node_modules' in path.parts:
             raise RuntimeError(f'Forbidden package member: {path.relative_to(ROOT)}')
