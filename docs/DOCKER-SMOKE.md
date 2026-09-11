@@ -1,8 +1,9 @@
 # Izolovaný Docker smoke test pro DIA-01
 
-**Aktuální stav: Docker build ani integrační běh nebyly provedeny.** V lokálním
-Windows prostředí chybí Docker CLI, daemon i WSL. Tento postup je připravený pro
-ruční spuštění na Linux AMD64 hostu; nic na DIA-01 zatím spuštěno nebylo.
+**Stav podle operátora DIA-01:** custom build, secret scan a image invariants prošly.
+První integrační běh skončil na health timeoutu kvůli chybějícím publikovaným portům.
+Produkční NPM zůstal beze změny. Oprava níže zatím prošla pouze lokálními testy;
+zde na Windows Docker není dostupný a opakovaný běh na DIA-01 musí provést operátor.
 
 ## Jediný příkaz pro celý test
 
@@ -33,11 +34,21 @@ novou cestu, například `...-02`. Není nutný Node/npm na hostu.
 | Testovací HTTP proxy | `127.0.0.1:18080` → 80 |
 | Testovací HTTPS proxy | `127.0.0.1:18443` → 443 |
 
-Porty lze změnit pomocí `--admin-port`, `--http-port`, `--https-port`; musejí být
-unikátní, volné a nad 1024. Porty 80/81/443 na hostu se nikdy nepoužijí. Backend
-není publikovaný vůbec. Compose používá novou interní síť bez internetového egressu;
-browser sdílí pouze network namespace testovacího NPM a nemockuje jeho API.
-Pro tento offline test je nastavené podporované `IP_RANGES_FETCH_ENABLED=false`.
+Povoleny jsou pouze uvedené porty; přepínače jiné hodnoty odmítnou. Porty musí být
+volné (také ručně spuštěný `dci-npm-manual-test` je může blokovat). Test sám žádný
+cizí kontejner nezastaví. Porty 80/81/443 na hostu se nikdy nepoužijí.
+Generuje se blokový `compose.yaml` s explicitním `host_ip: 127.0.0.1`.
+NPM má vlastní běžnou bridge síť `publishing` a interní síť `default`; backend je
+pouze v interní síti a nepublikuje porty. Browser sdílí namespace testovacího NPM.
+NPM/browser tak mohou mít odchozí konektivitu; nejde již o úplný zákaz egressu.
+ACME issuance zůstává vypnuté a `IP_RANGES_FETCH_ENABLED=false` zachované.
+
+Původní konfigurace připojovala NPM pouze k `internal: true`. Chování s prázdným
+`NetworkSettings.Ports` odpovídá [hlášení Moby pro Engine 20.10](https://github.com/moby/moby/issues/44986).
+Chyba parseru JSON nebyla prokázána. Samotné přejmenování souboru by tuto síťovou
+chybu neřešilo. Po startu, deployi, restartu a rollbacku skript kontroluje skutečné
+`HostConfig.PortBindings` i `NetworkSettings.Ports`, projektové labels a mounty
+ještě před čekáním na backend health. Chybějící nebo wildcard binding ihned selže.
 
 Pokud Gitleaks na hostu není, lze ho připravit bez instalace do systémových cest
 do nového soukromého adresáře (oficiální release + checksum). Spusťte tento blok
@@ -95,6 +106,15 @@ jinak by nebylo možné ověřit persistenci. Produkční cesty se nemountují a
 - `<workdir>/report.json`: PASS/FAIL/NOT_RUN jednotlivých bran, přesný image ID,
   build manifest digest a explicitní `registry_digest: null` (nic se nepushuje).
 - `<workdir>/failure.txt` a jednotlivé `*.log`: soukromá diagnostika případného selhání.
+- `<workdir>/diagnostics/`: při integračním selhání nebo Ctrl+C, ještě před cleanupem,
+  Compose ps, inspect vlastních testovacích kontejnerů, NetworkSettings.Ports a
+  posledních 2000 řádků stdout/stderr logů app/backendu. Každý sběr má timeout;
+  selhání jednoho příkazu neblokuje další. Tyto soubory nejsou součástí release.
+- `<workdir>/existing-containers-check.json`: konkrétní změněná pole nebo chyby
+  inspect. Kontrolují se pouze původní ID, nikoli dočasné kontejnery builderu/UI.
+  Změna konfigurace/startu/stavu je FAIL; chyba čtení je NOT_VERIFIED, nikoli
+  tvrzení o změně produkce. Obojí blokuje VERIFIED. Health probe data a pořadí
+  mountů porovnání neovlivňují. Původní příčina tohoto FAIL není bez diagnostiky doložená.
 - `<workdir>/private`, `data`, `letsencrypt`, `backup`: soukromá testovací data.
   Obsahují náhodná hesla/testovací klíče a **nikdy nesmějí do repa ani release**.
 - `<workdir>/release/`: source ZIP, oskenovaný image TAR, version lock a report,
@@ -120,12 +140,13 @@ hodnotu `project` z reportu a jeho Compose soubor:
 
 ```bash
 sudo docker compose -p dci-npm-smoke-HODNOTA_Z_REPORTU \
-  -f /var/tmp/dci-npm-smoke-01/compose.json --profile test down --remove-orphans
+  -f /var/tmp/dci-npm-smoke-01/compose.yaml --profile test down --remove-orphans
 ```
 
 ## Lokální ověření přípravy
 
-Python syntax check, detekce Playwright scénáře a **14 unit testů** prošly.
+Python syntax check a **20 unit testů** prošly; generovaný YAML byl nezávisle
+parsován a porovnán s původním datovým modelem. Detekce Playwright scénáře prošla dříve.
 Zahrnují izolaci Compose, odmítnutí produkčních portů/cest, image ancestry/config,
 kontrolu vrstev a lokální HTTP/WebSocket self-test pomocného backendu. Tento
 self-test nepoužil NPM ani Docker a **nenahrazuje integrační výsledek**.

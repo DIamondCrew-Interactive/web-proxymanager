@@ -59,6 +59,7 @@ def fresh_root(path):
 
 
 def check_ports(ports):
+    require(tuple(ports) == (18081, 18080, 18443), 'Only test ports 18081/18080/18443 are allowed')
     require(len(set(ports)) == len(ports), 'All test ports must be distinct')
     for port in ports:
         require(1024 < port < 65536, 'Use unprivileged test ports above 1024')
@@ -74,7 +75,9 @@ def compose_spec(project, work, stock, runner, ports):
     return {'name': project, 'services': {
         'app': {'image': stock, 'pull_policy': 'never', 'restart': 'no', 'cpus': 1.0, 'mem_limit': '1g',
                 'pids_limit': 512, 'environment': {'IP_RANGES_FETCH_ENABLED': 'false'},
-                'ports': [f'127.0.0.1:{admin}:81', f'127.0.0.1:{http}:80', f'127.0.0.1:{https}:443'],
+                'networks': ['publishing', 'default'],
+                'ports': [{'target': target, 'published': str(published), 'host_ip': '127.0.0.1', 'protocol': 'tcp'}
+                          for target, published in ((81, admin), (80, http), (443, https))],
                 'volumes': [mount(work / 'data', '/data'), mount(work / 'letsencrypt', '/etc/letsencrypt')]},
         'smoke-backend': {'image': LOCK['builder'], 'pull_policy': 'never', 'restart': 'no',
                           'entrypoint': ['node', '/test/backend.mjs'], 'cpus': 0.5, 'mem_limit': '128m',
@@ -83,7 +86,83 @@ def compose_spec(project, work, stock, runner, ports):
         'ui': {'image': runner, 'pull_policy': 'never', 'profiles': ['test'], 'restart': 'no',
                'network_mode': 'service:app', 'cpus': 1.0, 'mem_limit': '2g', 'shm_size': '512m',
                'volumes': [mount(work / 'private/credentials.json', '/run/smoke/credentials.json', True)]}
-    }, 'networks': {'default': {'internal': True}}}
+    }, 'networks': {'default': {'driver': 'bridge', 'internal': True},
+                    'publishing': {'driver': 'bridge', 'internal': False}}}
+
+
+def write_yaml(path, value):
+    # Block YAML; JSON-quoted scalars avoid YAML boolean/number/path ambiguities.
+    # This deliberately supports only our generated dict/list/scalar model.
+    def lines(obj, indent=0):
+        prefix = ' ' * indent
+        entries = obj.items() if isinstance(obj, dict) else enumerate(obj)
+        for key, item in entries:
+            head = prefix + (json.dumps(str(key)) + ':' if isinstance(obj, dict) else '-')
+            if isinstance(item, (dict, list)) and item:
+                yield head
+                yield from lines(item, indent + 2)
+            else:
+                yield head + ' ' + json.dumps(item)
+    path.write_text('\n'.join(lines(value)) + '\n', encoding='utf-8')
+    path.chmod(0o600)
+
+
+def assert_test_app(item, project, work, ports):
+    labels = item['Config'].get('Labels') or {}
+    require(labels.get('com.docker.compose.project') == project and
+            labels.get('com.docker.compose.service') == 'app', 'App is not owned by this smoke project')
+    require(item['Name'].lstrip('/') != 'nginx-proxy-manager_app_1', 'Production container is forbidden')
+    require({m['Destination']: (m['Type'], m['Source']) for m in item['Mounts']} ==
+            {'/data': ('bind', str(work / 'data')), '/etc/letsencrypt': ('bind', str(work / 'letsencrypt'))},
+            'Test container mounts differ from isolated paths')
+    expected = {f'{target}/tcp': [{'HostIp': '127.0.0.1', 'HostPort': str(port)}]
+                for target, port in zip((81, 80, 443), ports)}
+    for location, actual in [('HostConfig.PortBindings', item['HostConfig'].get('PortBindings')),
+                             ('NetworkSettings.Ports', item['NetworkSettings'].get('Ports'))]:
+        published = {key: value for key, value in (actual or {}).items() if value}
+        require(published == expected, f'Missing or unsafe loopback port publishing in {location}; see private diagnostics')
+
+
+def verify_test_app(command, project, work, ports):
+    cid = run(*command, 'ps', '-q', 'app')
+    require(bool(cid) and '\n' not in cid, 'Exactly one running test app required')
+    item = json.loads(run('docker', 'inspect', cid))[0]
+    assert_test_app(item, project, work, ports)
+    return cid
+
+
+def collect_diagnostics(command, project, work):
+    """Best effort, before cleanup, exclusively our project; never ship these files."""
+    folder = work / 'diagnostics'
+    folder.mkdir(mode=0o700, exist_ok=True)
+    def capture(name, args):
+        try:
+            result = subprocess.run([str(a) for a in args], stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, timeout=20, check=False)
+            (folder / name).write_bytes(result.stdout)
+            (folder / (name + '.stderr')).write_bytes(result.stderr)
+            (folder / (name + '.exit')).write_text(str(result.returncode))
+            return result.stdout.decode('utf-8') if result.returncode == 0 else ''
+        except (OSError, subprocess.TimeoutExpired, UnicodeError) as error:
+            (folder / (name + '.error')).write_text(type(error).__name__)
+            return ''
+    capture('compose-ps.txt', [*command, '--profile', 'test', 'ps', '-a'])
+    ids = capture('container-ids.txt', ['docker', 'ps', '-aq', '--no-trunc', '--filter',
+                                      'label=com.docker.compose.project=' + project]).splitlines()
+    for cid in ids:
+        if len(cid) != 64 or any(c not in '0123456789abcdef' for c in cid):
+            continue
+        raw = capture(cid + '.inspect.json', ['docker', 'inspect', cid])
+        try:
+            item = json.loads(raw)[0]
+            labels = item['Config'].get('Labels') or {}
+            if labels.get('com.docker.compose.project') != project:
+                continue
+            write_json(folder / (cid + '.ports.json'), item['NetworkSettings'].get('Ports'))
+            if labels.get('com.docker.compose.service') in ('app', 'smoke-backend'):
+                capture(cid + '.logs.txt', ['docker', 'logs', '--timestamps', '--tail', '2000', cid])
+        except (ValueError, KeyError, IndexError):
+            continue
 
 
 def image_invariants(stock, custom):
@@ -232,14 +311,38 @@ def websocket_echo(port):
         require(stream.read(len(payload)) == payload, 'WebSocket proxy payload was not echoed')
 
 
+def container_fingerprint(item):
+    # Health probes and other volatile State fields must not affect isolation.
+    # Canonicalize mount order; hash potentially sensitive configuration values.
+    def digest(value):
+        return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+    return {'started': item['State']['StartedAt'], 'status': item['State']['Status'],
+            'restart_count': item.get('RestartCount', 0), 'image': item['Image'],
+            'config': digest(item['Config']), 'host_config': digest(item['HostConfig']),
+            'mounts': digest(sorted(item['Mounts'], key=lambda m: m['Destination'])),
+            'networks': digest(sorted(item['NetworkSettings']['Networks']))}
+
+
 def inventory():
-    ids = run('docker', 'ps', '-aq').splitlines()
-    if not ids:
-        return {}
-    items = json.loads(run('docker', 'inspect', *ids))
-    # Only hashes and lifecycle fields are retained, never environment values.
-    return {item['Id']: {'started': item['State']['StartedAt'], 'status': item['State']['Status'],
-                        'configuration': hashlib.sha256(json.dumps({k: item[k] for k in ('Config', 'HostConfig', 'Mounts')}, sort_keys=True).encode()).hexdigest()} for item in items}
+    ids = run('docker', 'ps', '-aq', '--no-trunc').splitlines()
+    return {cid: container_fingerprint(json.loads(run('docker', 'inspect', cid))[0]) for cid in ids}
+
+
+def compare_existing(initial):
+    # Inspect only original IDs: a transient build/UI container disappearing must
+    # not make a bulk inspect of ALL containers fail the production guard.
+    differences, errors = {}, {}
+    for cid, before in initial.items():
+        try:
+            after = container_fingerprint(json.loads(run('docker', 'inspect', cid))[0])
+            changed = [key for key in before if before[key] != after[key]]
+            if changed:
+                differences[cid] = changed
+        except (subprocess.CalledProcessError, OSError, ValueError, KeyError, IndexError) as error:
+            errors[cid] = type(error).__name__
+    # Distinguish an unverified read from an observed change. Both block release.
+    status = 'FAIL' if differences else ('NOT_VERIFIED' if errors else 'PASS')
+    return status, {'changed_fields': differences, 'inspection_errors': errors}
 
 
 def data_state(api):
@@ -291,8 +394,8 @@ def main():
     for directory in ('data', 'letsencrypt'):
         (work / directory / 'dci-smoke-sentinel').write_bytes(secrets.token_bytes(32))
     sentinels = {directory: sha(work / directory / 'dci-smoke-sentinel') for directory in ('data', 'letsencrypt')}
-    config = work / 'compose.json'
-    write_json(config, compose_spec(project, work, LOCK['image'], runner, ports))
+    config = work / 'compose.yaml'
+    write_yaml(config, compose_spec(project, work, LOCK['image'], runner, ports))
     command = ['docker', 'compose', '-p', project, '-f', str(config)]
     initial = inventory()
     require(not run('docker', 'ps', '-aq', '--filter', 'label=com.docker.compose.project=' + project), 'Project collision')
@@ -334,7 +437,9 @@ def main():
         stage = 'integration'
         # Mark before up: even a partially successful startup is cleaned up in finally.
         stack_started = True
+        run(*command, 'config', log=work / 'compose-resolved.yaml')
         run(*command, 'up', '-d', '--pull', 'never', 'app', 'smoke-backend', log=work / 'compose.log')
+        verify_test_app(command, project, work, ports)
         api = API(args.admin_port)
         require(api.healthy().get('setup') is False, 'Test data is not empty: setup was already completed')
         api.request('POST', '/users', {'name': 'Smoke Administrator', 'nickname': 'Smoke', 'email': credentials['email'], 'auth': {'type': 'password', 'secret': credentials['password']}})
@@ -342,6 +447,7 @@ def main():
         require(api.request('GET', '/nginx/proxy-hosts') == [], 'Fresh test stack unexpectedly contains proxy hosts')
         run(sys.executable, ROOT / 'scripts/ops.py', 'backup', '--compose', config, '--backup', work / 'backup', log=work / 'ops-backup.log')
         run(sys.executable, ROOT / 'scripts/ops.py', 'deploy', '--backup', work / 'backup', '--image', tag, log=work / 'ops-deploy.log')
+        verify_test_app(command, project, work, ports)
         api.healthy(); api.login(credentials)
         cid = run(*command, 'ps', '-q', 'app')
         actual = json.loads(run('docker', 'inspect', cid))[0]
@@ -375,6 +481,7 @@ def main():
         stage = 'persistence'
         print('Restarting only the test NPM and verifying persistence...', flush=True)
         run(*command, 'restart', 'app', log=work / 'restart.log')
+        verify_test_app(command, project, work, ports)
         api.healthy(); api.login(credentials)
         require(data_state(api) == before, 'Test API data changed after restart')
         require(all(sha(work / d / 'dci-smoke-sentinel') == digest for d, digest in sentinels.items()), 'Persistent mount sentinel changed')
@@ -383,6 +490,7 @@ def main():
         stage = 'rollback'
         print('Running the actual ops.py stock rollback against the test project...', flush=True)
         run(sys.executable, ROOT / 'scripts/ops.py', 'rollback', '--backup', work / 'backup', log=work / 'ops-rollback.log')
+        verify_test_app(command, project, work, ports)
         api.healthy(); api.login(credentials)
         cid = run(*command, 'ps', '-q', 'app')
         require(json.loads(run('docker', 'inspect', cid))[0]['Image'] == stock['Id'], 'Rollback did not restore stock image ID')
@@ -392,13 +500,18 @@ def main():
         require(all(sha(work / d / 'dci-smoke-sentinel') == digest for d, digest in sentinels.items()), 'Rollback changed mount sentinel')
         proxy_checks(args.http_port, args.https_port)
         results['rollback'] = 'PASS'
-    except Exception as error:
+    except (Exception, KeyboardInterrupt) as error:
         results[stage] = 'FAIL'
         (work / 'failure.txt').write_text(traceback.format_exc())
         # Detailed process logs stay private. The release report contains no payloads.
         results['failure_type'] = type(error).__name__
         print(f'Smoke test stopped in {stage}: {type(error).__name__}. Inspect private logs in {work}.', file=sys.stderr)
     finally:
+        if stack_started and any(results[g] != 'PASS' for g in ('integration', 'persistence', 'rollback')):
+            try:
+                collect_diagnostics(command, project, work)
+            except Exception as error:
+                results['diagnostics_error'] = type(error).__name__
         if stack_started and not args.keep_running:
             try:
                 run(*command, '--profile', 'test', 'down', '--remove-orphans', log=work / 'cleanup.log')
@@ -409,11 +522,9 @@ def main():
                 run('docker', 'buildx', 'rm', builder, log=work / 'cleanup.log')
             except subprocess.CalledProcessError:
                 results['builder_cleanup'] = 'FAIL'
-        try:
-            after = inventory()
-            results['existing_containers_unchanged'] = 'PASS' if all(after.get(cid) == state for cid, state in initial.items()) else 'FAIL'
-        except subprocess.CalledProcessError:
-            results['existing_containers_unchanged'] = 'FAIL'
+        status, details = compare_existing(initial)
+        results['existing_containers_unchanged'] = status
+        write_json(work / 'existing-containers-check.json', details)
         gates = ('source_scan', 'docker_build', 'image_invariants', 'secret_scan', 'integration', 'persistence', 'rollback', 'existing_containers_unchanged')
         passed = all(results[g] == 'PASS' for g in gates) and not any(results.get(k) == 'FAIL' for k in ('cleanup', 'builder_cleanup'))
         results['release_candidate_verified'] = passed

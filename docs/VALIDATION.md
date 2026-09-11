@@ -1,8 +1,11 @@
 # Ověření a předprodukční checklist
 
 Navazující Docker ověření: [přesný izolovaný deployment/smoke script](DOCKER-SMOKE.md).
-Docker v lokálním prostředí nadále není dostupný. Nových 8 testů přípravy spolu
-s původními 6 ops testy prošlo (14 celkem); nejde o Docker integrační výsledky.
+Docker v lokálním prostředí nadále není dostupný. Po opravě orchestrace prošlo
+20 unit testů včetně port mappingů, izolace, diagnostiky a porovnání původních
+kontejnerů. YAML round-trip prošel nezávislým parserem. Nejde o Docker integrační výsledky.
+Operátor DIA-01 potvrdil build, secret scan a image invariants původní verze;
+integrační běh skončil na chybějícím port publishingu. Opravený běh čeká na opakování.
 
 Lokální ověření na Windows, Node 24.14.0, Yarn 1.22.22 a Chromium 145.
 Žádný test se nepřipojoval k DIA-01 ani nepoužíval produkční credentials.
