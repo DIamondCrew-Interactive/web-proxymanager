@@ -100,7 +100,7 @@ so the reskin-only image-invariants test intentionally does not accept it.
 
 ## Local validation and isolated native Docker test
 
-Completed: 12 Node tests using real Ed25519 and live loopback Express requests
+Completed: 15 Node tests using real Ed25519 and live loopback Express requests
 with injected broker/NPM doubles; frontend `tsc && vite build`; Chromium login/
 callback/2FA/password fallback check with mocked API; syntax checks. No Docker,
 real Staff broker or production login was tested locally.
@@ -150,3 +150,17 @@ process cannot race first-start JWT key generation. This is test-only; the runti
 image is unchanged. `docker-test.py` copies both current native-check.mjs and its
 diagnostic helper into the disposable container, so the previously built image
 can be reused with a fresh workdir.
+
+Native permission gate compares the SSO session to a real password login for the
+SAME non-admin NPM user: GET /users/me?expand=permissions, native verified JWT
+attrs.id/scope/issuer, and identical valid POST /users requesting an admin. It
+requires identical concrete denial responses and verifies no forbidden user was
+inserted. The fixture has default own-resource manage permissions, not a custom
+read-only role. Native 2.15.1 Access.can uses `throw errs.PermissionError(...)`
+without `new` (backend/lib/access.js); the constructor returns undefined and the
+route's next(undefined) can reach the exact 404 `Not Found - /users` fallback.
+The test accepts that precise denial or proper 403 Permission Denied only when
+both native-password and SSO responses agree. It never accepts 2xx, validation
+400, arbitrary 404, 500 or different permission results. Runtime auth/permissions
+are unchanged; this corrects an overly narrow test status assumption. Safe failure
+diagnostics now include a fixed assertion label and native/SSO numeric statuses.

@@ -4,6 +4,7 @@ import { randomBytes, generateKeyPairSync, sign } from 'node:crypto';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import express from 'express';
 import { generate } from 'otplib';
+import { compareProfiles, compareClaims, compareDenials, checked } from './native-permissions.mjs';
 import { diagnostic } from './native-diagnostics.mjs';
 import { createRouter } from './router.mjs';
 import { manageLinks } from './links.mjs';
@@ -55,9 +56,19 @@ try {
   async function login(){const start=await post('start');assert.equal(start.status,200);const cookie=start.headers.get('set-cookie').split(';')[0];const url=new URL((await start.json()).url);expectedChallenge=url.searchParams.get('code_challenge');const state=url.searchParams.get('state'),ticket=opaque();const response=await post('callback',{ticket,state},cookie);return {response,cookie,state,ticket};}
   mark('sso_callback');
   const first=await login();assert.equal(first.response.status,200);const full=await first.response.json();mark('sso_token_identity');assert.equal((await api('GET','/users/me',undefined,full.token)).id,viewer.id);
+  mark('native_password_equivalence');
+  const passwordViewer=(await api('POST','/tokens',{identity:'viewer@sso.example.test',secret:password})).token;
+  compareProfiles(await api('GET','/users/me?expand=permissions',undefined,passwordViewer),await api('GET','/users/me?expand=permissions',undefined,full.token),viewer.id);
+  compareClaims(await tokenModel().load(passwordViewer),await tokenModel().load(full.token),viewer.id);
   mark('viewer_permissions');
-  const forbidden=await fetch('http://127.0.0.1:3000/users',{method:'POST',headers:{...headers,Authorization:'Bearer '+full.token},body:JSON.stringify({name:'Forbidden',nickname:'No',email:'forbidden@sso.example.test',roles:['admin'],auth:{type:'password',secret:password}})});
-  assert.ok([401,403].includes(forbidden.status),'Viewer must not create admin');
+  const deniedBody={name:'Forbidden',nickname:'No',email:'forbidden@sso.example.test',roles:['admin'],auth:{type:'password',secret:password}};
+  async function denial(token){const response=await fetch('http://127.0.0.1:3000/users',{method:'POST',headers:{...headers,Authorization:'Bearer '+token},body:JSON.stringify(deniedBody)});return {status:response.status,body:await response.json()};}
+  const nativeDenied=await denial(passwordViewer),ssoDenied=await denial(full.token);
+  lastApi={route:'/users',method:'POST',status:ssoDenied.status,expected:nativeDenied.status,native_status:nativeDenied.status,sso_status:ssoDenied.status,native_error_code:nativeDenied.body?.error?.code,sso_error_code:ssoDenied.body?.error?.code};
+  compareDenials(nativeDenied,ssoDenied);
+  const unauthorized=await userModel.query().where('email','forbidden@sso.example.test').first();
+  checked('no_unauthorized_user',()=>assert.equal(unauthorized,undefined));
+  console.log('PERMISSION_EQUIVALENCE '+JSON.stringify({native_status:nativeDenied.status,sso_status:ssoDenied.status,canonical_profile:true,canonical_scope:true,no_new_user:true}));
   mark('ticket_replay');
   assert.equal((await post('callback',{ticket:first.ticket,state:first.state},first.cookie)).status,401);
   mark('setup_2fa');

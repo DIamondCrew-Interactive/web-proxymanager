@@ -27,7 +27,7 @@ try:
     smoke.require(not item['HostConfig'].get('PortBindings'),'Ports must not be published')
     smoke.require(item['HostConfig']['NetworkMode']=='none','Test must have no external network')
     smoke.require({m['Destination']:m['Source'] for m in item['Mounts']}=={'/data':str(work/'data'),'/etc/letsencrypt':str(work/'letsencrypt')},'Wrong test mounts')
-    for script in ('native-check.mjs', 'native-diagnostics.mjs'):
+    for script in ('native-check.mjs', 'native-diagnostics.mjs', 'native-permissions.mjs'):
         smoke.run('docker','cp',ROOT/'sso'/script,name+':/app/dci-sso/'+script)
     smoke.run('docker','exec',name,'node','/app/dci-sso/native-check.mjs',log=work/'native-test.log')
     success=True
