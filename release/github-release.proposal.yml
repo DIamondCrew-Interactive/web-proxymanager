@@ -1,0 +1,110 @@
+# PROPOSAL ONLY: deliberately outside .github/workflows; nothing runs or publishes.
+# After review, place under .github/workflows/build.yml.
+# publish defaults false; production-release MUST have required reviewers before activation.
+name: Verify and optionally release DiamondCrew Interactive
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish the verified image and create a release after environment approval'
+        type: boolean
+        default: false
+      release_tag:
+        description: 'Pinned release tag'
+        type: string
+        default: 'v2.15.1-dci.1.0.0'
+permissions:
+  contents: read
+jobs:
+  validate-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.14.0'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/prepare.mjs
+      - run: |
+          cd .build/frontend
+          corepack prepare yarn@1.22.22 --activate
+          corepack yarn install --frozen-lockfile --non-interactive
+          corepack yarn locale-compile
+          corepack yarn lint --vcs-enabled=false
+          corepack yarn build
+          corepack yarn vitest run --config ../../tests/upstream-vitest.config.mjs
+      - run: node scripts/check-integrity.mjs .build/upstream/frontend
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - run: python -m unittest discover -s tests -p 'test_*.py'
+      - name: Secret scan of source and static assets
+        run: |
+          version=8.24.2
+          curl -fsSLO "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz"
+          curl -fsSLO "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_checksums.txt"
+          grep " gitleaks_${version}_linux_x64.tar.gz$" "gitleaks_${version}_checksums.txt" | sha256sum -c -
+          tar -xzf "gitleaks_${version}_linux_x64.tar.gz" gitleaks
+          python scripts/secret-scan.py --gitleaks ./gitleaks --package
+          ./gitleaks dir .build/frontend/dist --redact --no-banner
+      - name: Real isolated Docker build, API/proxy/UI/restart/rollback smoke
+        run: |
+          sudo python3 scripts/smoke.py --workdir "$RUNNER_TEMP/dci-smoke" --gitleaks "$GITHUB_WORKSPACE/gitleaks"
+          sudo test -f "$RUNNER_TEMP/dci-smoke/release/VERIFIED"
+          sudo cp -R "$RUNNER_TEMP/dci-smoke/release" .build/verified-release
+          sudo chown -R "$(id -u):$(id -g)" .build/verified-release
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dci-verified-candidate
+          path: .build/verified-release/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    if: ${{ inputs.publish }}
+    needs: validate-build
+    runs-on: ubuntu-24.04
+    environment: production-release
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dci-verified-candidate
+          path: candidate
+      - name: Verify candidate, publish the tested image (no rebuild), create release
+        working-directory: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          test "$RELEASE_TAG" = 'v2.15.1-dci.1.0.0'
+          test -f VERIFIED
+          sha256sum --check ./*.sha256
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('report.json').read_text())
+          gates = ['source_scan', 'docker_build', 'image_invariants', 'secret_scan', 'integration', 'persistence', 'rollback', 'existing_containers_unchanged']
+          assert report['release_candidate_verified'] and all(report[g] == 'PASS' for g in gates)
+          assert Path('VERIFIED').read_text().strip() == report['image_id']
+          PY
+          tested_id="$(python3 -c "import json; print(json.load(open('report.json'))['image_id'])")"
+          docker load --input image.tar
+          test "$(docker image inspect "$tested_id" --format '{{.Id}}')" = "$tested_id"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          version="${RELEASE_TAG#v}"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker tag "$tested_id" "$image:$version"
+          docker push "$image:$version"
+          docker image inspect "$image:$version" --format '{{json .RepoDigests}}' > registry-digests.json
+          printf '%s\n' 'DiamondCrew Interactive Proxy Manager on pinned NPM 2.15.1.' \
+            'This image passed isolated API/UI/HTTP/HTTPS/WebSocket/restart/stock-rollback checks.' \
+            'ACME issuance was not performed. Backup production image and persistent data before deployment.' \
+            'See README.md and docs/DOCKER-SMOKE.md in source.zip. No production deployment was performed.' > release-notes.md
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "DiamondCrew Interactive Proxy Manager $version" --notes-file release-notes.md \
+            source.zip source.zip.sha256 report.json report.json.sha256 registry-digests.json
+# No latest tag, no SSH/deploy job, no production data or credentials in artifacts.

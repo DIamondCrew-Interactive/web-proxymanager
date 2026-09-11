@@ -1,0 +1,6 @@
+# Example image-only override. Keep the original production Compose file and project name.
+# Use scripts/ops.py for guarded backup/deploy/rollback.
+services:
+  app:
+    image: diamondcrew-interactive/proxy-manager:2.15.1-dci.1.0.0
+    pull_policy: never

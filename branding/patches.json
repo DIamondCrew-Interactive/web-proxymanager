@@ -1,0 +1,172 @@
+[
+  {
+    "file": "src/components/SiteHeader.tsx",
+    "sha256": "73228fc24c1509d07b9d8286397a3c2e43e0d4bd2729e74fcb51ea9da1e32ab6",
+    "replacements": [
+      [
+        "import styles from \"./SiteHeader.module.css\";",
+        "import { Brand } from \"src/diamondcrew/Brand\";"
+      ],
+      [
+        "<div className={styles.logo}>\n\t\t\t\t\t\t\t<img\n\t\t\t\t\t\t\t\tsrc=\"/images/logo-no-text.svg\"\n\t\t\t\t\t\t\t\twidth={40}\n\t\t\t\t\t\t\t\theight={40}\n\t\t\t\t\t\t\t\tclassName=\"navbar-brand-image\"\n\t\t\t\t\t\t\t\talt=\"Logo\"\n\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t</div>\n\t\t\t\t\t\tNginx Proxy Manager",
+        "<Brand compact />"
+      ]
+    ]
+  },
+  {
+    "file": "src/pages/Login/index.tsx",
+    "sha256": "b99529bc0cd5588033d4f564ac5d89fef6dfc6d7acb43f5590c5006265a7e825",
+    "replacements": [
+      [
+        "import styles from \"./index.module.css\";",
+        "import { Brand } from \"src/diamondcrew/Brand\";"
+      ],
+      [
+        "<img\n\t\t\t\t\t\tclassName={styles.logo}\n\t\t\t\t\t\tsrc=\"/images/logo-text-horizontal-grey.png\"\n\t\t\t\t\t\talt=\"Nginx Proxy Manager\"\n\t\t\t\t\t/>",
+        "<Brand />"
+      ],
+      [
+        "className=\"d-flex justify-content-between align-items-center mb-4 ps-4 pe-3\"",
+        "className=\"dc-login-brand\""
+      ]
+    ]
+  },
+  {
+    "file": "src/pages/Setup/index.tsx",
+    "sha256": "28efaa2f10aa62bd1ca000f13f7950e92d2e6a14b96345e51b1660c2118566e3",
+    "replacements": [
+      [
+        "import styles from \"./index.module.css\";",
+        "import styles from \"./index.module.css\";\nimport { Brand } from \"src/diamondcrew/Brand\";"
+      ],
+      [
+        "<img\n\t\t\t\t\t\tclassName={styles.logo}\n\t\t\t\t\t\tsrc=\"/images/logo-text-horizontal-grey.png\"\n\t\t\t\t\t\talt=\"Nginx Proxy Manager\"\n\t\t\t\t\t/>",
+        "<Brand />"
+      ]
+    ]
+  },
+  {
+    "file": "src/main.tsx",
+    "sha256": "91425361ba3bed2e23124f796e4864ecbffb4bf29597904d775977e93702307b",
+    "replacements": [
+      [
+        "import \"./App.css\";",
+        "import \"./App.css\";\nimport \"./diamondcrew/theme.css\";"
+      ]
+    ]
+  },
+  {
+    "file": "src/Router.tsx",
+    "sha256": "64def2ce84b09894161abf19cb7dcc905951895b59cf1a9d9c5f708a7e71cf2d",
+    "replacements": [
+      [
+        "<Page>",
+        "<Page className=\"dc-shell\">"
+      ]
+    ]
+  },
+  {
+    "file": "src/context/ThemeContext.tsx",
+    "sha256": "821a5cb35fbc173011711e7c7bff69d9bc8f95e72cc7f76325509d79d6db02c9",
+    "replacements": [
+      [
+        "return stored || getBrowserDefault();",
+        "return stored || Dark;"
+      ]
+    ]
+  },
+  {
+    "file": "src/components/Loading.tsx",
+    "sha256": "e4a9ff501426bc7e2f2931d562fc8b3734bf0a9d09a97102f6866ced771865a8",
+    "replacements": [
+      [
+        "src=\"/images/logo-no-text.svg\"",
+        "src=\"/diamondcrew/logo.png\""
+      ]
+    ]
+  },
+  {
+    "file": "src/components/SiteMenu.tsx",
+    "sha256": "d47d685a8f6a876edb1e4f56a60aa19b02ccda31fb004d8f3ae36f5d4afac93d",
+    "replacements": [
+      [
+        "menuItems.map((item) => {",
+        "menuItems.flatMap((item) => item.items ? item.items.map((child) => ({ ...child, icon: ({ \"/nginx/proxy\": IconBolt, \"/nginx/redirection\": IconArrowsCross, \"/nginx/stream\": IconDisc, \"/nginx/404\": IconBoltOff } as Record<string, React.ElementType>)[child.to || \"\"] || item.icon })) : [item]).map((item) => {"
+      ],
+      [
+        "\tIconBook,",
+        "\tIconBook,\n\tIconBolt,\n\tIconArrowsCross,\n\tIconDisc,\n\tIconBoltOff,"
+      ]
+    ]
+  },
+  {
+    "file": "src/pages/Dashboard/index.tsx",
+    "sha256": "4f5c30cb2cfec58914260a5d9a06ca0bc03bc80cd6b643a528f425e4b5ab5309",
+    "replacements": [
+      [
+        "const Dashboard = () => {",
+        "import { Hero, Overview } from \"src/diamondcrew/Overview\";\n\nconst Dashboard = () => {"
+      ],
+      [
+        "\t\t<div>",
+        "\t\t<div className=\"dc-dashboard\">\n\t\t\t<Hero />"
+      ],
+      [
+        "\t\t</div>\n\t);",
+        "\t\t\t<Overview />\n\t\t</div>\n\t);"
+      ],
+      [
+        "<T id=\"proxy-hosts.count\" data={{ count: hostReport?.proxy }} />",
+        "<strong className=\"dc-count\">{hostReport?.proxy ?? \"\\u2014\"}</strong><T id=\"proxy-hosts\" />"
+      ],
+      [
+        "<T\n\t\t\t\t\t\t\t\t\t\t\t\t\tid=\"redirection-hosts.count\"\n\t\t\t\t\t\t\t\t\t\t\t\t\tdata={{ count: hostReport?.redirection }}\n\t\t\t\t\t\t\t\t\t\t\t\t/>",
+        "<strong className=\"dc-count\">{hostReport?.redirection ?? \"\\u2014\"}</strong><T id=\"redirection-hosts\" />"
+      ],
+      [
+        "<T id=\"streams.count\" data={{ count: hostReport?.stream }} />",
+        "<strong className=\"dc-count\">{hostReport?.stream ?? \"\\u2014\"}</strong><T id=\"streams\" />"
+      ],
+      [
+        "<T id=\"dead-hosts.count\" data={{ count: hostReport?.dead }} />",
+        "<strong className=\"dc-count\">{hostReport?.dead ?? \"\\u2014\"}</strong><T id=\"dead-hosts\" />"
+      ]
+    ]
+  },
+  {
+    "file": "index.html",
+    "sha256": "acb4d0de5077bc22ff8de696028eaa1ff6d3d2d49197be79f533aaf53aa28046",
+    "replacements": [
+      [
+        "<title>Nginx Proxy Manager</title>",
+        "<title>DiamondCrew Interactive | Proxy Manager</title>"
+      ],
+      [
+        "Manage Nginx hosts with a simple, powerful interface",
+        "DiamondCrew Interactive Proxy Manager"
+      ],
+      [
+        "\t\t<link rel=\"preload\" href=\"/images/logo-no-text.svg\" as=\"image\" type=\"image/svg+xml\" fetchPriority=\"high\">\n\t\t<link\n\t\t\trel=\"apple-touch-icon\"\n\t\t\tsizes=\"180x180\"\n\t\t\thref=\"/images/favicon/apple-touch-icon.png\" />\n\t\t<link\n\t\t\trel=\"icon\"\n\t\t\ttype=\"image/png\"\n\t\t\tsizes=\"32x32\"\n\t\t\thref=\"/images/favicon/favicon-32x32.png\" />\n\t\t<link\n\t\t\trel=\"icon\"\n\t\t\ttype=\"image/png\"\n\t\t\tsizes=\"16x16\"\n\t\t\thref=\"/images/favicon/favicon-16x16.png\" />\n\t\t<link rel=\"manifest\" href=\"/images/favicon/site.webmanifest\" />\n\t\t<link\n\t\t\trel=\"mask-icon\"\n\t\t\thref=\"/images/favicon/safari-pinned-tab.svg\"\n\t\t\tcolor=\"#5bbad5\" />\n\t\t<link rel=\"shortcut icon\" href=\"/images/favicon/favicon.ico\" />\n\t\t<meta name=\"msapplication-TileColor\" content=\"#4a4a4a\" />\n\t\t<meta\n\t\t\tname=\"msapplication-config\"\n\t\t\tcontent=\"/images/favicon/browserconfig.xml\" />\n\t\t<meta name=\"theme-color\" content=\"#ffffff\" />",
+        "\t\t<link rel=\"icon\" type=\"image/png\" href=\"/diamondcrew/logo.png\" />\n\t\t<link rel=\"apple-touch-icon\" href=\"/diamondcrew/logo.png\" />\n\t\t<meta name=\"theme-color\" content=\"#030b16\" />"
+      ]
+    ]
+  },
+  {
+    "file": "src/components/NavLink.tsx",
+    "sha256": "49968edd50aadf166c4bc3367d497564b4e1d5724f9751a101ba8cc497661af1",
+    "replacements": [
+      [
+        "import { useNavigate }",
+        "import { useLocation, useNavigate }"
+      ],
+      [
+        "const navigate = useNavigate();",
+        "const navigate = useNavigate();\n\tconst active = useLocation().pathname === to;"
+      ],
+      [
+        "className={isDropdownItem ? \"dropdown-item\" : \"nav-link\"}",
+        "className={`${isDropdownItem ? \"dropdown-item\" : \"nav-link\"}${active ? \" active\" : \"\"}`}\n\t\t\taria-current={active ? \"page\" : undefined}"
+      ]
+    ]
+  }
+]

@@ -1,0 +1,14 @@
+**
+!Dockerfile
+!upstream.lock.json
+!scripts/
+!scripts/prepare.mjs
+!branding/
+!branding/**
+**/.env*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.db
+**/*.sqlite*

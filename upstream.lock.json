@@ -1,0 +1,9 @@
+{
+  "version": "2.15.1",
+  "commit": "76f09db610cfcaecf6d608a8947d6f75aa028870",
+  "repository": "https://github.com/NginxProxyManager/nginx-proxy-manager.git",
+  "image": "jc21/nginx-proxy-manager:2.15.1@sha256:52b2c59994f3d36acfcf70a1626f29734df0ed8c71bacc0269f78b6f939858bb",
+  "snapshotImageId": "sha256:f44e23f5e4d7d71dae4548e273b498c567311c76502a128f3bc782f528a58087",
+  "builder": "node:24.14.0-bookworm@sha256:5a593d74b632d1c6f816457477b6819760e13624455d587eef0fa418c8d0777b",
+  "themeVersion": "1.0.0"
+}
