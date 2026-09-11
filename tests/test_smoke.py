@@ -7,11 +7,13 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import ssl
 import subprocess
 import tarfile
 import tempfile
+import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 spec = importlib.util.spec_from_file_location('smoke', Path(__file__).resolve().parents[1] / 'scripts/smoke.py')
 smoke = importlib.util.module_from_spec(spec)
@@ -199,6 +201,103 @@ class SmokeSafetyTests(unittest.TestCase):
         finally:
             backend.terminate()
             backend.wait(timeout=10)
+
+
+OPENSSL = shutil.which('openssl')
+if not OPENSSL and Path('C:/Program Files/Git/usr/bin/openssl.exe').is_file():
+    OPENSSL = 'C:/Program Files/Git/usr/bin/openssl.exe'
+
+
+@unittest.skipUnless(OPENSSL, 'OpenSSL needed for real local TLS regression tests')
+class SmokeTLSTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.temp.cleanup)
+        cls.folder = Path(cls.temp.name)
+        (cls.folder / 'openssl.cnf').write_text('[req]\ndistinguished_name=dn\n[dn]\n')
+        for name, hostname in [('trusted', smoke.TLS_HOSTNAME), ('wrong-host', 'wrong.smoke.dci.test'),
+                               ('untrusted', smoke.TLS_HOSTNAME)]:
+            subprocess.run([OPENSSL, 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+                            '-config', str(cls.folder / 'openssl.cnf'), '-subj', '/CN=' + hostname,
+                            '-addext', 'subjectAltName=DNS:' + hostname,
+                            '-keyout', str(cls.folder / (name + '.key')),
+                            '-out', str(cls.folder / (name + '.pem'))],
+                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+    def probe(self, served, trusted, expected_error=None):
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(str(self.folder / (served + '.pem')), str(self.folder / (served + '.key')))
+        seen, requests, errors = [], [], []
+        def sni(sock, hostname, ctx):
+            seen.append(hostname)
+            if hostname != smoke.TLS_HOSTNAME:
+                return ssl.ALERT_DESCRIPTION_UNRECOGNIZED_NAME
+        context.set_servername_callback(sni)
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen(1)
+            listener.settimeout(5)
+            port = listener.getsockname()[1]
+            def serve():
+                try:
+                    raw, peer = listener.accept()
+                    with raw:
+                        raw.settimeout(5)
+                        with context.wrap_socket(raw, server_side=True) as connection:
+                            request = b''
+                            while b'\r\n\r\n' not in request:
+                                part = connection.recv(4096)
+                                if not part:
+                                    raise RuntimeError('Missing HTTP request')
+                                request += part
+                            requests.append(request)
+                            body = json.dumps({'service': 'dci-smoke-backend', 'port': 8080}).encode()
+                            connection.sendall(b'HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: ' +
+                                               str(len(body)).encode() + b'\r\n\r\n' + body)
+                except Exception as error:
+                    errors.append(error)
+            worker = threading.Thread(target=serve, daemon=True)
+            worker.start()
+            try:
+                if expected_error:
+                    with self.assertRaises(ssl.SSLCertVerificationError) as caught:
+                        smoke.proxy_http(port, 8080, tls=True, certificate=self.folder / (trusted + '.pem'))
+                    self.assertIn(expected_error, caught.exception.verify_message.lower())
+                else:
+                    smoke.proxy_http(port, 8080, tls=True, certificate=self.folder / (trusted + '.pem'))
+            finally:
+                worker.join(timeout=6)
+            self.assertFalse(worker.is_alive())
+        self.assertEqual(seen, [smoke.TLS_HOSTNAME])
+        if expected_error:
+            self.assertEqual(requests, [])
+        else:
+            self.assertEqual(errors, [])
+            self.assertTrue(requests[0].startswith(b'GET /smoke HTTP/1.1\r\n'))
+            self.assertIn(b'\r\nHost: tls.smoke.dci.test\r\n', requests[0])
+
+    def test_real_loopback_tls_requires_sni_and_serves_expected_http(self):
+        self.probe('trusted', 'trusted')
+
+    def test_trusted_certificate_with_wrong_hostname_rejected(self):
+        self.probe('wrong-host', 'wrong-host', 'hostname mismatch')
+
+    def test_correct_hostname_with_untrusted_certificate_rejected(self):
+        self.probe('untrusted', 'trusted', 'self-signed certificate')
+
+    def test_fixed_loopback_destination_and_explicit_sni(self):
+        connection = smoke.SmokeHTTPSConnection(18443, self.folder / 'trusted.pem')
+        self.assertTrue(connection._context.check_hostname)
+        self.assertEqual(connection._context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertEqual(connection._context.cert_store_stats()['x509'], 1)
+        context = MagicMock()
+        connection._context = context
+        with patch.object(smoke.socket, 'create_connection') as create:
+            connection.connect()
+            create.assert_called_once_with(('127.0.0.1', 18443), timeout=10)
+            context.wrap_socket.assert_called_once_with(create.return_value, server_hostname='tls.smoke.dci.test')
+        connection.close()
 
 
 if __name__ == '__main__':

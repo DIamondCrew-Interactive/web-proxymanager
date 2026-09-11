@@ -258,11 +258,34 @@ def multipart(files):
     return b''.join(parts) + f'--{boundary}--\r\n'.encode(), f'multipart/form-data; boundary={boundary}'
 
 
-def proxy_http(port, expected_port, tls=False):
-    context = ssl._create_unverified_context() if tls else None
-    connection = http.client.HTTPSConnection('127.0.0.1', port, timeout=10, context=context) if tls else http.client.HTTPConnection('127.0.0.1', port, timeout=10)
+TLS_HOSTNAME = 'tls.smoke.dci.test'
+
+
+class SmokeHTTPSConnection(http.client.HTTPSConnection):
+    """Dial loopback, independently authenticate the test virtual host with SNI."""
+    def __init__(self, port, certificate):
+        # Only this run's self-signed certificate is trusted. No system CA store,
+        # global SSL changes, or environment-driven TLS key logging.
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.load_verify_locations(cafile=str(certificate))
+        context.check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
+        super().__init__(TLS_HOSTNAME, port, timeout=10, context=context)
+
+    def connect(self):
+        raw = socket.create_connection(('127.0.0.1', self.port), timeout=self.timeout)
+        try:
+            self.sock = self._context.wrap_socket(raw, server_hostname=TLS_HOSTNAME)
+        except BaseException:
+            raw.close()
+            raise
+
+
+def proxy_http(port, expected_port, tls=False, certificate=None):
+    require(not tls or certificate is not None, 'HTTPS probe requires this run\'s trusted test certificate')
+    connection = SmokeHTTPSConnection(port, certificate) if tls else http.client.HTTPConnection('127.0.0.1', port, timeout=10)
     try:
-        connection.request('GET', '/smoke', headers={'Host': 'tls.smoke.dci.test' if tls else 'smoke.dci.test'})
+        connection.request('GET', '/smoke', headers={'Host': TLS_HOSTNAME if tls else 'smoke.dci.test'})
         response = connection.getresponse()
         require(response.status == 200, 'Proxy HTTP response is not 200')
         require(json.loads(response.read()) == {'service': 'dci-smoke-backend', 'port': expected_port}, 'Wrong proxy destination/body')
@@ -281,9 +304,9 @@ def ready_probe(probe):
             time.sleep(1)
 
 
-def proxy_checks(http_port, https_port):
+def proxy_checks(http_port, https_port, certificate):
     ready_probe(lambda: proxy_http(http_port, 8081))
-    ready_probe(lambda: proxy_http(https_port, 8080, tls=True))
+    ready_probe(lambda: proxy_http(https_port, 8080, tls=True, certificate=certificate))
     ready_probe(lambda: websocket_echo(http_port))
 
 
@@ -472,7 +495,7 @@ def main():
         run('docker', 'exec', cid, 'nginx', '-t', log=work / 'nginx-check.log')
         generated = run('docker', 'exec', cid, 'cat', f"/data/nginx/proxy_host/{primary['id']}.conf")
         require('proxy_set_header Upgrade' in generated and '8081' in generated, 'Generated Nginx WebSocket config missing')
-        proxy_checks(args.http_port, args.https_port)
+        proxy_checks(args.http_port, args.https_port, certificate)
         logs = api.request('GET', '/audit-log')
         require(any(e['object_type'] == 'proxy-host' and e['object_id'] == primary['id'] and e['action'] == 'created' for e in logs), 'Audit create event missing')
         require(any(e['object_type'] == 'proxy-host' and e['object_id'] == primary['id'] and e['action'] == 'updated' for e in logs), 'Audit update event missing')
@@ -485,7 +508,7 @@ def main():
         api.healthy(); api.login(credentials)
         require(data_state(api) == before, 'Test API data changed after restart')
         require(all(sha(work / d / 'dci-smoke-sentinel') == digest for d, digest in sentinels.items()), 'Persistent mount sentinel changed')
-        proxy_checks(args.http_port, args.https_port)
+        proxy_checks(args.http_port, args.https_port, certificate)
         results['persistence'] = 'PASS'
         stage = 'rollback'
         print('Running the actual ops.py stock rollback against the test project...', flush=True)
@@ -498,7 +521,7 @@ def main():
         with api.opener.open(f'http://127.0.0.1:{args.admin_port}/', timeout=10) as response:
             require('<title>Nginx Proxy Manager</title>' in response.read().decode(), 'Rollback frontend is not stock')
         require(all(sha(work / d / 'dci-smoke-sentinel') == digest for d, digest in sentinels.items()), 'Rollback changed mount sentinel')
-        proxy_checks(args.http_port, args.https_port)
+        proxy_checks(args.http_port, args.https_port, certificate)
         results['rollback'] = 'PASS'
     except (Exception, KeyboardInterrupt) as error:
         results[stage] = 'FAIL'

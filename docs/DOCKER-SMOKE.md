@@ -2,8 +2,19 @@
 
 **Stav podle operátora DIA-01:** custom build, secret scan a image invariants prošly.
 První integrační běh skončil na health timeoutu kvůli chybějícím publikovaným portům.
-Produkční NPM zůstal beze změny. Oprava níže zatím prošla pouze lokálními testy;
-zde na Windows Docker není dostupný a opakovaný běh na DIA-01 musí provést operátor.
+Smoke-02 potvrdil opravu networkingu, běžící custom image a PASS kontroly existujících
+kontejnerů; následně selhal HTTPS handshake kvůli chybějícímu DNS SNI v klientu.
+Produkční NPM zůstal beze změny. Oprava SNI čeká na smoke-03; zde na Windows Docker není dostupný.
+
+HTTPS klient nyní otevírá TCP výhradně na `127.0.0.1:18443` a před HTTP požadavkem
+volá `SSLContext.wrap_socket(..., server_hostname="tls.smoke.dci.test")`.
+Samostatný `SSLContext(PROTOCOL_TLS_CLIENT)` načte pouze konkrétní self-signed
+`private/test-certificate.pem` z tohoto běhu, který byl nahrán do testovacího NPM.
+`CERT_REQUIRED` a hostname verification zůstávají zapnuté; systémové trust store
+ani globální SSL nastavení se nemění. Poté odešle `GET /smoke` s HTTP Host
+`tls.smoke.dci.test` a ověří status 200 i přesný JSON backendu pro port 8080.
+Stejný certifikát se ověřuje před restartem, po restartu i po rollbacku.
+Viz [Python SSLContext](https://docs.python.org/3/library/ssl.html#ssl.SSLContext.wrap_socket).
 
 ## Jediný příkaz pro celý test
 
@@ -145,11 +156,15 @@ sudo docker compose -p dci-npm-smoke-HODNOTA_Z_REPORTU \
 
 ## Lokální ověření přípravy
 
-Python syntax check a **20 unit testů** prošly; generovaný YAML byl nezávisle
+Python syntax check a **24 unit testů** prošly; generovaný YAML byl nezávisle
 parsován a porovnán s původním datovým modelem. Detekce Playwright scénáře prošla dříve.
 Zahrnují izolaci Compose, odmítnutí produkčních portů/cest, image ancestry/config,
 kontrolu vrstev a lokální HTTP/WebSocket self-test pomocného backendu. Tento
 self-test nepoužil NPM ani Docker a **nenahrazuje integrační výsledek**.
+Čtyři nové regresní testy ověřují explicitní TCP loopback/SNI a skutečný lokální TLS
+server, který odmítá chybějící SNI. Prověřují úspěšný handshake/Host/path/body,
+odmítnutí důvěryhodného certifikátu s chybným hostname a nedůvěryhodného certifikátu
+se správným hostname. Klíče vznikají pouze v dočasném adresáři a po testech se odstraní.
 
 Skutečné Docker/rollback/persistence výsledky stále čekají na spuštění výše.
 ACME issuance/renewal a DNS challenge se do internetu záměrně netestují; lokální

@@ -6,8 +6,8 @@ boční navigace, přehledové karty, tabulky, formuláře a modaly. Zachovává
 login, 2FA, oprávnění a NPM editory. Světlý režim i přepínač jazyků zůstávají dostupné.
 
 **Source je publikovaný pouze ve větvi `smoke-test`; production release je vypnutý.**
-Operátor DIA-01 potvrdil build, secret scan a image invariants. Integrační běh odhalil
-chybu publikování portů na interní síti; oprava čeká na opakovaný Docker test.
+Operátor DIA-01 potvrdil build, secret scan, image invariants a ve smoke-02 také
+opravený networking a production isolation. Oprava HTTPS SNI čeká na smoke-03.
 Produkční NPM nebyl změněn. Lokální prohlížečové testy používají syntetická data a mock API.
 
 Pro skutečný Docker build a integrační ověření je nyní připravený
