@@ -1,10 +1,13 @@
 # Experimental SSO overlay. Does not alter the approved reskin Dockerfile.
-FROM node:24.14.0-bookworm@sha256:5a593d74b632d1c6f816457477b6819760e13624455d587eef0fa418c8d0777b AS frontend
+FROM node:24.14.0-bookworm@sha256:5a593d74b632d1c6f816457477b6819760e13624455d587eef0fa418c8d0777b AS context-check
 WORKDIR /work
 COPY upstream.lock.json ./
 COPY scripts/prepare.mjs scripts/prepare.mjs
 COPY branding branding
-COPY sso sso
+COPY sso/prepare.mjs sso/SSOLogin.tsx sso/core.mjs sso/router.mjs sso/routes.mjs sso/links.mjs sso/cli.mjs sso/upstream-guards.json sso/dci-proxymanager /work/sso/
+RUN node --check /work/sso/prepare.mjs && node --check /work/sso/routes.mjs
+
+FROM context-check AS frontend
 RUN node scripts/prepare.mjs && node sso/prepare.mjs frontend /work/.build/frontend
 WORKDIR /work/.build/frontend
 RUN yarn install --frozen-lockfile --non-interactive && yarn locale-compile && yarn build

@@ -74,9 +74,14 @@ log. NPM's internal admin access log is disabled in the stock image.
 
 ## Build and CLI (manual, not executed here)
 
-From repository root, use Docker supporting Dockerfile-specific ignore files:
+From repository root. The root `.dockerignore` explicitly allows only the nine
+SSO build/runtime files. There is no Dockerfile-specific ignore override; this
+works with the older Docker builder as well. `COPY` names every required file
+explicitly and fails before cloning upstream if any is missing. Validate the
+actual Docker context first with the lightweight `context-check` target:
 
 ```bash
+docker build --target context-check -f sso/Dockerfile -t diamondcrew-interactive/npm-sso-context-check .
 docker build -f sso/Dockerfile -t diamondcrew-interactive/proxy-manager:2.15.1-sso-local .
 docker exec TEST_CONTAINER dci-proxymanager sso link NPM_USER_ID DISCORD_ID
 docker exec TEST_CONTAINER dci-proxymanager sso show DISCORD_ID
@@ -127,3 +132,10 @@ Installed node_modules and Python caches are excluded; DB/keys/secrets remain fo
 Run `python3 scripts/secret-scan.py --gitleaks /usr/local/bin/gitleaks --package`
 from the clean candidate checkout to create a scanned source-only ZIP. This does
 not authorize publishing that ZIP as a production release.
+
+The first DIA candidate build failed because the effective root context allowlist
+excluded SSO sources; it relied on Dockerfile-specific ignore support. The root
+allowlist now carries the required files itself. `scripts/prepare.mjs` writes only
+`.build/` and never deletes `/work/sso`. Context verification does not require
+upstream cloning or frontend dependency installation. Full Docker verification
+still must run on the server; local tests do not substitute for that gate.

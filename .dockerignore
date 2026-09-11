@@ -5,6 +5,16 @@
 !scripts/prepare.mjs
 !branding/
 !branding/**
+!sso/
+!sso/prepare.mjs
+!sso/SSOLogin.tsx
+!sso/core.mjs
+!sso/router.mjs
+!sso/routes.mjs
+!sso/links.mjs
+!sso/cli.mjs
+!sso/upstream-guards.json
+!sso/dci-proxymanager
 **/.env*
 **/*.pem
 **/*.key
