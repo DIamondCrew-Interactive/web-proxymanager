@@ -100,7 +100,7 @@ so the reskin-only image-invariants test intentionally does not accept it.
 
 ## Local validation and isolated native Docker test
 
-Completed: 11 Node tests using real Ed25519 and live loopback Express requests
+Completed: 12 Node tests using real Ed25519 and live loopback Express requests
 with injected broker/NPM doubles; frontend `tsc && vite build`; Chromium login/
 callback/2FA/password fallback check with mocked API; syntax checks. No Docker,
 real Staff broker or production login was tested locally.
@@ -139,3 +139,14 @@ allowlist now carries the required files itself. `scripts/prepare.mjs` writes on
 `.build/` and never deletes `/work/sso`. Context verification does not require
 upstream cloning or frontend dependency installation. Full Docker verification
 still must run on the server; local tests do not substitute for that gate.
+
+Native test diagnostics: each phase emits a fixed STAGE label. On failure it
+writes `data/dci-sso-native-failure.json` in the private test workdir, containing
+only allowlisted stage, error type/code, API method/path and numeric HTTP status.
+No error message, stack, operands, request body, token, password or TOTP is emitted.
+The old failure artifact did not retain these fields and cannot reconstruct them.
+NPM model imports now occur only AFTER backend health, so a second early Node
+process cannot race first-start JWT key generation. This is test-only; the runtime
+image is unchanged. `docker-test.py` copies both current native-check.mjs and its
+diagnostic helper into the disposable container, so the previously built image
+can be reused with a fresh workdir.
